@@ -1,18 +1,24 @@
-#include <iostream>
 #include "tools.h"
 
-using Eigen::VectorXd;
-using Eigen::MatrixXd;
-using std::vector;
+#include <stdexcept>
 
-Tools::Tools() {}
+Eigen::VectorXd Tools::CalculateRMSE(const std::vector<Eigen::VectorXd> &estimations,
+                                     const std::vector<Eigen::VectorXd> &ground_truth) {
 
-Tools::~Tools() {}
+  if (estimations.size() != ground_truth.size()) {
+    throw std::runtime_error("Estimations and ground truth must be of the same size");
+  }
 
-VectorXd Tools::CalculateRMSE(const vector<VectorXd> &estimations,
-                              const vector<VectorXd> &ground_truth) {
-  /**
-  TODO:
-    * Calculate the RMSE here.
-  */
+  if (estimations.empty()) {
+    return Eigen::VectorXd(estimations[0].size());
+  }
+
+  Eigen::VectorXd sum = Eigen::VectorXd::Zero(estimations[0].size());
+  for (size_t i = 0; i < estimations.size(); ++i) {
+    Eigen::VectorXd sqr = (estimations[i] - ground_truth[i]).array().square();
+    sum += sqr;
+  }
+
+  Eigen::VectorXd mean = sum / estimations.size();
+  return mean.array().sqrt();
 }
