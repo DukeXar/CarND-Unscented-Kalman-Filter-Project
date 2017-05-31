@@ -2,11 +2,12 @@
 
 #include <stdexcept>
 
-Eigen::VectorXd Tools::CalculateRMSE(const std::vector<Eigen::VectorXd> &estimations,
-                                     const std::vector<Eigen::VectorXd> &ground_truth) {
-
+Eigen::VectorXd Tools::CalculateRMSE(
+    const std::vector<Eigen::VectorXd> &estimations,
+    const std::vector<Eigen::VectorXd> &ground_truth) {
   if (estimations.size() != ground_truth.size()) {
-    throw std::runtime_error("Estimations and ground truth must be of the same size");
+    throw std::runtime_error(
+        "Estimations and ground truth must be of the same size");
   }
 
   if (estimations.empty()) {
