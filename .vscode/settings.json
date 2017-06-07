@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "dense": "cpp",
+        "string": "cpp",
+        "core": "cpp"
+    }
+}
