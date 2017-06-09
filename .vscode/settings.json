@@ -2,6 +2,17 @@
     "files.associations": {
         "dense": "cpp",
         "string": "cpp",
-        "core": "cpp"
+        "core": "cpp",
+        "cctype": "cpp",
+        "cmath": "cpp",
+        "csignal": "cpp",
+        "cstdarg": "cpp",
+        "cstddef": "cpp",
+        "cstdio": "cpp",
+        "cstdlib": "cpp",
+        "cstring": "cpp",
+        "ctime": "cpp",
+        "cwchar": "cpp",
+        "cwctype": "cpp"
     }
 }
