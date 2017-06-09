@@ -44,8 +44,13 @@ int main() {
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
 
+    if (length) {
+      // std::cout << "Got message length=" << length << ", ["
+      //          << std::string(data, length) << "]" << std::endl;
+    }
+
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
-      auto s = hasData(std::string(data));
+      auto s = hasData(std::string(data, length));
       if (s != "") {
         auto j = json::parse(s);
 
@@ -135,7 +140,7 @@ int main() {
           msgJson["rmse_vx"] = RMSE(2);
           msgJson["rmse_vy"] = RMSE(3);
           auto msg = "42[\"estimate_marker\"," + msgJson.dump() + "]";
-          // std::cout << msg << std::endl;
+          std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {

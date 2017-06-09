@@ -1,27 +1,29 @@
 #include "model.h"
 
 #include <cmath>
+#include <iostream>
 #include <stdexcept>
 
 namespace Model {
 
-const size_t kStateSize = 5;
 const size_t kNoiseCovSize = 2;
 const size_t kAugStateSize = kStateSize + kNoiseCovSize;
 
+namespace Details {
 Eigen::MatrixXd GenerateSigmaPoints(const Gaussian& state) {
   const size_t n_x = state.mean.rows();
-  const double lambda = 3 - n_x;
+  // It is important to have 3.0 as double, otherwise compiler bites
+  const double lambda = 3.0 - n_x;
 
   const Eigen::MatrixXd sqrt_cov = state.cov.llt().matrixL();
 
   Eigen::MatrixXd result(n_x, 2 * n_x + 1);
   result.col(0) = state.mean;
 
-  for (size_t i = 1; i < n_x; ++i) {
+  for (size_t i = 0; i < n_x; ++i) {
     const auto k = sqrt(lambda + n_x) * sqrt_cov.col(i);
-    result.col(i) = state.mean + k;
-    result.col(i + n_x) = state.mean - k;
+    result.col(i + 1) = state.mean + k;
+    result.col(i + 1 + n_x) = state.mean - k;
   }
 
   return result;
@@ -62,8 +64,8 @@ Eigen::VectorXd CTRVPredictVector(const Eigen::VectorXd& aug_sigma_pts,
 
   double px_new, py_new;
   if (fabs(psi) > 0.001) {
-    px_new = px / psi_dot * (sin(psi + psi_dot * dt) - sin(psi));
-    py_new = py / psi_dot * (cos(psi) - cos(psi + psi_dot * dt));
+    px_new = px + v / psi_dot * (sin(psi + psi_dot * dt) - sin(psi));
+    py_new = py + v / psi_dot * (cos(psi) - cos(psi + psi_dot * dt));
   } else {
     px_new = px + v * dt * cos(psi);
     py_new = py + v * dt * sin(psi);
@@ -101,47 +103,57 @@ Eigen::MatrixXd CTRVPredictSigmaPoints(const Eigen::MatrixXd& aug_sigma_pts,
 }
 
 double NormalizeAngle(double angle) {
+  size_t cnt = 0;
   while (angle < -M_PI) {
     angle += 2 * M_PI;
+    ++cnt;
   }
   while (angle > M_PI) {
     angle -= 2 * M_PI;
+    ++cnt;
   }
+  std::cout << "Normalize took " << cnt << " iterations" << std::endl;
   return angle;
 }
 
-Eigen::MatrixXd GenerateSigmaWeights(size_t sz) {
-  const double lambda = 3 - sz;
+void CTRVNormalizeStateAngle(Eigen::VectorXd& state) {
+  state(3) = NormalizeAngle(state(3));
+}
 
-  Eigen::VectorXd weights(sz);
-  weights(0) = lambda / (lambda + sz);
+// Generates a vector of weights for given number of sigma points
+Eigen::MatrixXd GenerateSigmaWeights(size_t n_pts) {
+  const size_t n_aug = (n_pts - 1) / 2;
+  const double lambda = 3.0 - n_aug;
+
+  Eigen::VectorXd weights(n_pts);
+  weights(0) = lambda / (lambda + n_aug);
   for (size_t i = 1; i < weights.rows(); ++i) {
-    weights(i) = 0.5 / (lambda + sz);
+    weights(i) = 0.5 / (lambda + n_aug);
   }
 
   return weights;
 }
 
-Gaussian SigmaPointsToGaussian(const Eigen::MatrixXd& pred_sigma_pts) {
-  const size_t n_sigma = (pred_sigma_pts.cols() - 1) / 2;
-  if (n_sigma != kAugStateSize) {
-    throw std::runtime_error("Invalid input for SigmaPointsToState");
-  }
+Gaussian SigmaPointsToGaussian(
+    const Eigen::MatrixXd& pred_sigma_pts,
+    const std::function<void(Eigen::VectorXd&)>& normalizer) {
+  const size_t n_sigma_pts = pred_sigma_pts.cols();
+  const size_t state_size = pred_sigma_pts.rows();
 
-  Eigen::VectorXd weights = GenerateSigmaWeights(pred_sigma_pts.cols());
+  Eigen::VectorXd weights = GenerateSigmaWeights(n_sigma_pts);
 
-  Eigen::VectorXd res_x(kStateSize);
+  Eigen::VectorXd res_x(state_size);
   res_x.fill(0);
-  for (size_t i = 1; i < n_sigma; ++i) {
-    res_x = res_x + weights(i) * pred_sigma_pts.col(i);
+  for (size_t i = 0; i < n_sigma_pts; ++i) {
+    res_x += weights(i) * pred_sigma_pts.col(i);
   }
 
-  Eigen::MatrixXd res_cov(kStateSize, kStateSize);
+  Eigen::MatrixXd res_cov(state_size, state_size);
   res_cov.fill(0);
-  for (size_t i = 0; i < weights.rows(); ++i) {
+  for (size_t i = 0; i < n_sigma_pts; ++i) {
     Eigen::VectorXd diff = pred_sigma_pts.col(i) - res_x;
-    diff(3) = NormalizeAngle(diff(3));
-    res_cov = res_cov + weights(i) * diff * diff.transpose();
+    normalizer(diff);
+    res_cov += weights(i) * diff * diff.transpose();
   }
 
   return {res_x, res_cov};
@@ -151,13 +163,14 @@ Eigen::MatrixXd CreateCrossCorrelation(
     const Eigen::VectorXd& state_mean, const Eigen::MatrixXd& state_sigma_pts,
     const Eigen::VectorXd& measurement_mean,
     const Eigen::MatrixXd& measurement_sigma_pts) {
-  Eigen::VectorXd weights = GenerateSigmaWeights(state_sigma_pts.cols());
+  const size_t n_sigma_pts = state_sigma_pts.cols();
+  Eigen::VectorXd weights = GenerateSigmaWeights(n_sigma_pts);
   Eigen::MatrixXd result(state_mean.rows(), measurement_mean.rows());
   result.fill(0);
-  for (size_t i = 0; i < weights.rows(); ++i) {
+  for (size_t i = 0; i < n_sigma_pts; ++i) {
     auto state_diff = (state_sigma_pts.col(i) - state_mean);
     auto measurement_diff = (measurement_sigma_pts.col(i) - measurement_mean);
-    result.col(i) += weights(i) * state_diff * measurement_diff.transpose();
+    result += weights(i) * state_diff * measurement_diff.transpose();
   }
   return result;
 }
@@ -183,16 +196,32 @@ Gaussian KalmanUpdate(const Gaussian& pred_state,
   return {new_state_mean, new_state_cov};
 }
 
-UnscentedKalmanFilter::UnscentedKalmanFilter(double std_a, double std_yawdd)
-    : std_a_(std_a),
-      std_yawdd_(std_yawdd),
-      state_{Eigen::VectorXd::Zero(kStateSize),
-             Eigen::MatrixXd::Identity(kStateSize, kStateSize)} {}
+}  // namespace Details
 
-void UnscentedKalmanFilter::Predict(double dt) {
+CTRVUnscentedKalmanFilter::CTRVUnscentedKalmanFilter(double std_a,
+                                                     double std_yawdd,
+                                                     Gaussian initialState)
+    : std_a_(std_a), std_yawdd_(std_yawdd), state_(initialState) {}
+
+void CTRVUnscentedKalmanFilter::Predict(double dt) {
+  using namespace Details;
+  std::cout << "CTRVPredictSigmaPoints" << std::endl;
   sigma_pts_ = CTRVPredictSigmaPoints(
       CTRVGenerateAugmentedSigmaPoints(state_, std_a_, std_yawdd_), dt);
-  state_ = SigmaPointsToGaussian(sigma_pts_);
+  std::cout << "SigmaPointsToGaussian" << std::endl;
+  state_ = SigmaPointsToGaussian(sigma_pts_, CTRVNormalizeStateAngle);
+  std::cout << "Predicted state\n"
+            << state_.mean << ",\n"
+            << state_.cov << std::endl;
+}
+
+Eigen::VectorXd Radar::CreateFirstMean(const Eigen::VectorXd& measurement) {
+  const double rho = measurement(0);
+  const double phi = measurement(1);
+
+  Eigen::VectorXd projected(Model::kStateSize);
+  projected << rho * cos(phi), rho * sin(phi), 0, 0, 0;
+  return projected;
 }
 
 Eigen::VectorXd Radar::ApplyModel(const Eigen::VectorXd& pred_sigma_pt) {
@@ -200,43 +229,29 @@ Eigen::VectorXd Radar::ApplyModel(const Eigen::VectorXd& pred_sigma_pt) {
   const double py = pred_sigma_pt(1);
   const double v = pred_sigma_pt(2);
   const double psi = pred_sigma_pt(3);
-  const double psi_dot = pred_sigma_pt(4);
+  // not used const double psi_dot = pred_sigma_pt(4);
 
   const double rho = sqrt(px * px + py * py);
 
   // TODO(dukexar): rho != 0
   // TODO(dukexar): px != 0
   const double phi = atan2(py, px);
-  const double rho_dot = (px * cos(phi) * v + py * sin(phi) * v) / rho;
+  const double rho_dot = (px * cos(psi) * v + py * sin(psi) * v) / rho;
 
   Eigen::VectorXd result(Size());
   result << rho, phi, rho_dot;
+
   return result;
 }
 
-Gaussian Radar::PredictMeasurementGaussian(
-    const Eigen::MatrixXd& pred_sensor_sigma_pts, const Eigen::MatrixXd& cov) {
-  const size_t n_sigma = (pred_sensor_sigma_pts.cols() - 1) / 2;
+void Radar::NormalizeDelta(Eigen::VectorXd& delta) {
+  delta(1) = Details::NormalizeAngle(delta(1));
+}
 
-  // TODO(dukexar): Can weights be shared?
-  Eigen::VectorXd weights = GenerateSigmaWeights(pred_sensor_sigma_pts.cols());
-
-  Eigen::VectorXd res_x(weights.rows());
-  res_x.fill(0);
-  for (size_t i = 1; i < n_sigma; ++i) {
-    res_x = res_x + weights(i) * pred_sensor_sigma_pts.col(i);
-  }
-
-  Eigen::MatrixXd res_cov(weights.rows(), weights.rows());
-  res_cov.fill(0);
-  for (size_t i = 0; i < weights.rows(); ++i) {
-    Eigen::VectorXd diff = pred_sensor_sigma_pts.col(i) - res_x;
-    diff(1) = NormalizeAngle(diff(1));
-    res_cov.col(i) = weights(i) * diff * diff.transpose();
-  }
-  res_cov += cov;
-
-  return {res_x, res_cov};
+Eigen::VectorXd Laser::CreateFirstMean(const Eigen::VectorXd& measurement) {
+  Eigen::VectorXd result(Model::kStateSize);
+  result << measurement(0), measurement(1), 0, 0, 0;
+  return result;
 }
 
 Eigen::VectorXd Laser::ApplyModel(const Eigen::VectorXd& pred_sigma_pt) {
@@ -248,26 +263,6 @@ Eigen::VectorXd Laser::ApplyModel(const Eigen::VectorXd& pred_sigma_pt) {
   return result;
 }
 
-Gaussian Laser::PredictMeasurementGaussian(
-    const Eigen::MatrixXd& pred_sensor_sigma_pts, const Eigen::MatrixXd& cov) {
-  const size_t n_sigma = (pred_sensor_sigma_pts.cols() - 1) / 2;
-  Eigen::VectorXd weights = GenerateSigmaWeights(pred_sensor_sigma_pts.cols());
-
-  Eigen::VectorXd res_x(weights.rows());
-  res_x.fill(0);
-  for (size_t i = 1; i < n_sigma; ++i) {
-    res_x = res_x + weights(i) * pred_sensor_sigma_pts.col(i);
-  }
-
-  Eigen::MatrixXd res_cov(weights.rows(), weights.rows());
-  res_cov.fill(0);
-  for (size_t i = 0; i < weights.rows(); ++i) {
-    Eigen::VectorXd diff = pred_sensor_sigma_pts.col(i) - res_x;
-    res_cov.col(i) = weights(i) * diff * diff.transpose();
-  }
-  res_cov += cov;
-
-  return {res_x, res_cov};
-}
+void Laser::NormalizeDelta(Eigen::VectorXd& delta) {}
 
 }  // namespace Model

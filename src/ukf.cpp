@@ -1,5 +1,6 @@
 #include "ukf.h"
 
+#include <iostream>
 #include <stdexcept>
 
 namespace {
@@ -11,7 +12,7 @@ const double kStdYawdd = 30;
 const double kMicrosecondsInSecond = 1000000.0;
 }  // namespace
 
-UKF::UKF() : ukf_(30, 30), laser_cov_(2, 2), radar_cov_(3, 3) {
+UKF::UKF() : laser_cov_(2, 2), radar_cov_(3, 3), prev_timestamp_(0) {
   // if this is false, laser measurements will be ignored (except during init)
   use_laser_ = true;
 
@@ -42,24 +43,68 @@ UKF::UKF() : ukf_(30, 30), laser_cov_(2, 2), radar_cov_(3, 3) {
 }
 
 void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
-  // TODO(dukexar): First measurement
+  // TODO(dukexar): Can we live without switch here? Too ugly to have a template
+  // and a switch together...
+  if (!ukf_) {
+    switch (meas_package.sensor_type_) {
+      case MeasurementPackage::SensorType::LASER: {
+        if (use_laser_) {
+          Model::Gaussian initialState{
+              Model::Laser::CreateFirstMean(meas_package.raw_measurements_),
+              Eigen::MatrixXd::Identity(Model::kStateSize, Model::kStateSize)};
+          ukf_.reset(new Model::CTRVUnscentedKalmanFilter(kStdA, kStdYawdd,
+                                                          initialState));
+        }
+        break;
+      }
+      case MeasurementPackage::SensorType::RADAR: {
+        if (use_radar_) {
+          Model::Gaussian initialState{
+              Model::Radar::CreateFirstMean(meas_package.raw_measurements_),
+              Eigen::MatrixXd::Identity(Model::kStateSize, Model::kStateSize)};
+          ukf_.reset(new Model::CTRVUnscentedKalmanFilter(kStdA, kStdYawdd,
+                                                          initialState));
+        }
+        break;
+      }
+      default:
+        throw std::runtime_error("Invalid sensor type");
+    }
 
-  ukf_.Predict(meas_package.timestamp_ / kMicrosecondsInSecond);
+    prev_timestamp_ = meas_package.timestamp_;
+    return;
+  }
 
+  double dt =
+      (meas_package.timestamp_ - prev_timestamp_) / kMicrosecondsInSecond;
+  std::cout << ">>> Predicting dt=" << dt << std::endl;
+  std::cout << "state=\n"
+            << ukf_->state().mean << "\n---\n"
+            << ukf_->state().cov << "\n---" << std::endl;
+  ukf_->Predict(dt);
+
+  std::cout << ">>> Predicted" << std::endl;
+  std::cout << "state=\n"
+            << ukf_->state().mean << "\n---\n"
+            << ukf_->state().cov << "\n---" << std::endl;
+
+  std::cout << ">>> Updating " << meas_package.sensor_type_ << std::endl;
   switch (meas_package.sensor_type_) {
     case MeasurementPackage::SensorType::LASER: {
       if (use_laser_) {
-        ukf_.Update<Model::Laser>(meas_package.raw_measurements_, laser_cov_);
+        ukf_->Update<Model::Laser>(meas_package.raw_measurements_, laser_cov_);
       }
       break;
     }
     case MeasurementPackage::SensorType::RADAR: {
       if (use_radar_) {
-        ukf_.Update<Model::Radar>(meas_package.raw_measurements_, radar_cov_);
+        ukf_->Update<Model::Radar>(meas_package.raw_measurements_, radar_cov_);
       }
       break;
     }
     default:
       throw std::runtime_error("Invalid sensor type");
   }
+
+  prev_timestamp_ = meas_package.timestamp_;
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include "Eigen/Dense"
 #include "measurement_package.h"
 #include "model.h"
@@ -14,13 +15,10 @@ class UKF {
    */
   void ProcessMeasurement(MeasurementPackage meas_package);
 
-  Eigen::VectorXd state() const { return ukf_.state().mean; }
+  Eigen::VectorXd state() const { return ukf_->state().mean; }
 
  private:
-  Model::UnscentedKalmanFilter ukf_;
-
-  ///* initially set to false, set to true in first call of ProcessMeasurement
-  bool is_initialized_;
+  std::unique_ptr<Model::CTRVUnscentedKalmanFilter> ukf_;
 
   ///* if this is false, laser measurements will be ignored (except for init)
   bool use_laser_;
@@ -29,13 +27,7 @@ class UKF {
   bool use_radar_;
 
   ///* time when the state is true, in us
-  long long time_us_;
-
-  ///* Process noise standard deviation longitudinal acceleration in m/s^2
-  double std_a_;
-
-  ///* Process noise standard deviation yaw acceleration in rad/s^2
-  double std_yawdd_;
+  long long prev_timestamp_;
 
   ///* Weights of sigma points
   Eigen::VectorXd weights_;
