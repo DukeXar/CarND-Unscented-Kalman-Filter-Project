@@ -59,6 +59,8 @@ int main() {
         if (event == "telemetry") {
           // j[1] is the data JSON object
 
+          std::cout << "Got message length=" << length << ", ["
+                    << std::string(data, length) << "]" << std::endl;
           string sensor_measurment = j[1]["sensor_measurement"];
 
           MeasurementPackage meas_package;
@@ -107,13 +109,16 @@ int main() {
           gt_values(3) = vy_gt;
           ground_truth.push_back(gt_values);
 
-          // Call ProcessMeasurment(meas_package) for Kalman filter
           ukf.ProcessMeasurement(meas_package);
 
-          // Push the current estimated x,y positon from the Kalman filter's
-          // state vector
+          VectorXd x;
+          if (ukf.has_state()) {
+            x = ukf.state();
+          } else {
+            x = VectorXd(4);
+            x.fill(0);
+          }
 
-          VectorXd x = ukf.state();
           double p_x = x(0);
           double p_y = x(1);
           double v = x(2);

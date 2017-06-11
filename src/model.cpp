@@ -63,7 +63,7 @@ Eigen::VectorXd CTRVPredictVector(const Eigen::VectorXd& aug_sigma_pts,
   const double nu_psi_dotdot = aug_sigma_pts(6);
 
   double px_new, py_new;
-  if (fabs(psi) > 0.001) {
+  if (fabs(psi_dot) > 0.00001) {
     px_new = px + v / psi_dot * (sin(psi + psi_dot * dt) - sin(psi));
     py_new = py + v / psi_dot * (cos(psi) - cos(psi + psi_dot * dt));
   } else {
@@ -93,27 +93,44 @@ Eigen::VectorXd CTRVPredictVector(const Eigen::VectorXd& aug_sigma_pts,
 
 Eigen::MatrixXd CTRVPredictSigmaPoints(const Eigen::MatrixXd& aug_sigma_pts,
                                        double dt) {
+  std::cout << "        CTRVPredictSigmaPoints input(\n"
+            << aug_sigma_pts.transpose() << "), dt=" << dt << std::endl;
   Eigen::MatrixXd result(kStateSize, aug_sigma_pts.cols());
 
   for (size_t i = 0; i < aug_sigma_pts.cols(); ++i) {
     result.col(i) = CTRVPredictVector(aug_sigma_pts.col(i), dt);
   }
+  std::cout << "        CTRVPredictSigmaPoints result(\n"
+            << result.transpose() << ")" << std::endl;
 
   return result;
 }
 
 double NormalizeAngle(double angle) {
-  size_t cnt = 0;
-  while (angle < -M_PI) {
-    angle += 2 * M_PI;
-    ++cnt;
+  bool is_neg = false;
+
+  if (angle < 0) {
+    angle = -angle;
+    is_neg = true;
   }
-  while (angle > M_PI) {
-    angle -= 2 * M_PI;
-    ++cnt;
+
+  // angle >= 0.0
+  // angle + M_PI >= M_PI
+  // new_angle in [0.0 .. 2 * M_PI)
+  // new_angle == 0.0 only if (angle + M_PI) == (K * 2 * M_PI)
+
+  double new_angle = fmod(angle + M_PI, 2 * M_PI);
+  if (new_angle == 0.0) {
+    new_angle = M_PI;
+  } else {
+    new_angle -= M_PI;
   }
-  std::cout << "Normalize took " << cnt << " iterations" << std::endl;
-  return angle;
+
+  if (is_neg) {
+    return -new_angle;
+  }
+
+  return new_angle;
 }
 
 void CTRVNormalizeStateAngle(Eigen::VectorXd& state) {
@@ -175,25 +192,28 @@ Eigen::MatrixXd CreateCrossCorrelation(
   return result;
 }
 
-Gaussian KalmanUpdate(const Gaussian& pred_state,
-                      const Eigen::MatrixXd& pred_state_sigma_pts,
-                      const Gaussian& pred_measurement,
-                      const Eigen::MatrixXd& pred_measurement_sigma_pts,
-                      const Eigen::VectorXd& measurement_mean) {
+KalmanUpdateResult KalmanUpdate(
+    const Gaussian& pred_state, const Eigen::MatrixXd& pred_state_sigma_pts,
+    const Gaussian& pred_measurement,
+    const Eigen::MatrixXd& pred_measurement_sigma_pts,
+    const Eigen::VectorXd& measurement_mean) {
   Eigen::MatrixXd cross_corr =
       CreateCrossCorrelation(pred_state.mean, pred_state_sigma_pts,
                              pred_measurement.mean, pred_measurement_sigma_pts);
 
-  Eigen::MatrixXd kalman_gain = cross_corr * pred_measurement.cov.inverse();
+  Eigen::MatrixXd s_inv = pred_measurement.cov.inverse();
+  Eigen::MatrixXd kalman_gain = cross_corr * s_inv;
 
+  auto measurement_diff = (measurement_mean - pred_measurement.mean);
   Eigen::VectorXd new_state_mean =
-      pred_state.mean +
-      kalman_gain * (measurement_mean - pred_measurement.mean);
+      pred_state.mean + kalman_gain * measurement_diff;
 
   Eigen::MatrixXd new_state_cov =
       pred_state.cov -
       kalman_gain * pred_measurement.cov * kalman_gain.transpose();
-  return {new_state_mean, new_state_cov};
+
+  double nis = measurement_diff.transpose() * s_inv * measurement_diff;
+  return {Gaussian{new_state_mean, new_state_cov}, nis};
 }
 
 }  // namespace Details
@@ -201,27 +221,29 @@ Gaussian KalmanUpdate(const Gaussian& pred_state,
 CTRVUnscentedKalmanFilter::CTRVUnscentedKalmanFilter(double std_a,
                                                      double std_yawdd,
                                                      Gaussian initialState)
-    : std_a_(std_a), std_yawdd_(std_yawdd), state_(initialState) {}
+    : std_a_(std_a), std_yawdd_(std_yawdd), state_(initialState), nis_() {}
 
 void CTRVUnscentedKalmanFilter::Predict(double dt) {
   using namespace Details;
-  std::cout << "CTRVPredictSigmaPoints" << std::endl;
   sigma_pts_ = CTRVPredictSigmaPoints(
       CTRVGenerateAugmentedSigmaPoints(state_, std_a_, std_yawdd_), dt);
-  std::cout << "SigmaPointsToGaussian" << std::endl;
   state_ = SigmaPointsToGaussian(sigma_pts_, CTRVNormalizeStateAngle);
-  std::cout << "Predicted state\n"
-            << state_.mean << ",\n"
-            << state_.cov << std::endl;
 }
 
-Eigen::VectorXd Radar::CreateFirstMean(const Eigen::VectorXd& measurement) {
+Gaussian Radar::CreateInitialGaussian(const Eigen::VectorXd& measurement,
+                                      const Eigen::MatrixXd& measurement_cov) {
   const double rho = measurement(0);
   const double phi = measurement(1);
 
-  Eigen::VectorXd projected(Model::kStateSize);
-  projected << rho * cos(phi), rho * sin(phi), 0, 0, 0;
-  return projected;
+  Eigen::VectorXd mean(Model::kStateSize);
+  mean << rho * cos(phi), rho * sin(phi), 0, 0, 0;
+
+  Eigen::MatrixXd cov =
+      Eigen::MatrixXd::Identity(Model::kStateSize, Model::kStateSize);
+  cov(0, 0) = measurement_cov(0, 0);
+  cov(1, 1) = measurement_cov(1, 1);
+
+  return {mean, cov};
 }
 
 Eigen::VectorXd Radar::ApplyModel(const Eigen::VectorXd& pred_sigma_pt) {
@@ -248,10 +270,17 @@ void Radar::NormalizeDelta(Eigen::VectorXd& delta) {
   delta(1) = Details::NormalizeAngle(delta(1));
 }
 
-Eigen::VectorXd Laser::CreateFirstMean(const Eigen::VectorXd& measurement) {
-  Eigen::VectorXd result(Model::kStateSize);
-  result << measurement(0), measurement(1), 0, 0, 0;
-  return result;
+Gaussian Laser::CreateInitialGaussian(const Eigen::VectorXd& measurement,
+                                      const Eigen::MatrixXd& measurement_cov) {
+  Eigen::VectorXd mean(Model::kStateSize);
+  mean << measurement(0), measurement(1), 0, 0, 0;
+
+  Eigen::MatrixXd cov =
+      Eigen::MatrixXd::Identity(Model::kStateSize, Model::kStateSize);
+  cov(0, 0) = measurement_cov(0, 0);
+  cov(1, 1) = measurement_cov(1, 1);
+
+  return {mean, cov};
 }
 
 Eigen::VectorXd Laser::ApplyModel(const Eigen::VectorXd& pred_sigma_pt) {

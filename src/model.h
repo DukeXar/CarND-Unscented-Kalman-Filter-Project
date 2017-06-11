@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <iostream>
 #include <type_traits>
 #include "Eigen/Dense"
 
@@ -24,11 +25,13 @@ class CTRVUnscentedKalmanFilter {
   void Update(const Eigen::VectorXd& measurement, const Eigen::MatrixXd& cov);
 
   Gaussian state() const { return state_; }
+  double nis() const { return nis_; }
 
  private:
   const double std_a_;
   const double std_yawdd_;
   Gaussian state_;
+  double nis_;
   Eigen::MatrixXd sigma_pts_;
 };
 
@@ -39,7 +42,8 @@ class Radar {
   // Returns radar sigma point from predicted state sigma point
   static Eigen::VectorXd ApplyModel(const Eigen::VectorXd& pred_sigma_pt);
 
-  static Eigen::VectorXd CreateFirstMean(const Eigen::VectorXd& measurement);
+  static Gaussian CreateInitialGaussian(const Eigen::VectorXd& measurement,
+                                        const Eigen::MatrixXd& measurement_cov);
 
   static void NormalizeDelta(Eigen::VectorXd& delta);
 };
@@ -51,12 +55,16 @@ class Laser {
   // Returns laser sigma point from predicted state sigma point
   static Eigen::VectorXd ApplyModel(const Eigen::VectorXd& pred_sigma_pt);
 
-  static Eigen::VectorXd CreateFirstMean(const Eigen::VectorXd& measurement);
+  static Gaussian CreateInitialGaussian(const Eigen::VectorXd& measurement,
+                                        const Eigen::MatrixXd& measurement_cov);
 
   static void NormalizeDelta(Eigen::VectorXd& delta);
 };
 
 namespace Details {
+
+double NormalizeAngle(double angle);
+
 Eigen::MatrixXd GenerateSigmaWeights(size_t sz);
 
 Eigen::MatrixXd GenerateSigmaPoints(const Gaussian& state);
@@ -74,11 +82,16 @@ Gaussian SigmaPointsToGaussian(
     const Eigen::MatrixXd& pred_sigma_pts,
     const std::function<void(Eigen::VectorXd&)>& normalizer);
 
-Gaussian KalmanUpdate(const Gaussian& pred_state,
-                      const Eigen::MatrixXd& pred_state_sigma_pts,
-                      const Gaussian& pred_measurement,
-                      const Eigen::MatrixXd& pred_measurement_sigma_pts,
-                      const Eigen::VectorXd& measurement_mean);
+struct KalmanUpdateResult {
+  Gaussian state;
+  double nis;
+};
+
+KalmanUpdateResult KalmanUpdate(
+    const Gaussian& pred_state, const Eigen::MatrixXd& pred_state_sigma_pts,
+    const Gaussian& pred_measurement,
+    const Eigen::MatrixXd& pred_measurement_sigma_pts,
+    const Eigen::VectorXd& measurement_mean);
 
 template <typename Sensor>
 inline Eigen::MatrixXd ApplySensorModel(const Eigen::MatrixXd& pred_sigma_pts) {
@@ -100,8 +113,12 @@ inline void CTRVUnscentedKalmanFilter::Update(
   auto pred_measurement = SigmaPointsToGaussian(pred_measurement_sigma_pts,
                                                 &Sensor::NormalizeDelta);
   pred_measurement.cov += cov;
-  state_ = KalmanUpdate(state_, sigma_pts_, pred_measurement,
-                        pred_measurement_sigma_pts, measurement);
+  auto res = KalmanUpdate(state_, sigma_pts_, pred_measurement,
+                          pred_measurement_sigma_pts, measurement);
+  state_ = res.state;
+  nis_ = res.nis;
+  std::cout << "After Update" << std::endl;
+  std::cout << state_.mean << std::endl;
 }
 
 }  // namespace Model

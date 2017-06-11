@@ -51,9 +51,10 @@ if(CMAKE_VERSION VERSION_LESS 2.8.11)
                       "${gmock_SOURCE_DIR}/include")
 endif()
 
-enable_testing()
+#enable_testing()
 
 # This is going to compile src/model.cpp twice, but who cares for this project?
 add_executable(test_model src/model.cpp src/test_model.cpp)
 target_link_libraries(test_model gtest_main)
-add_test(NAME test_model COMMAND test_model)
+#add_test(NAME test_model COMMAND test_model)
+add_custom_target(run_test test_model)

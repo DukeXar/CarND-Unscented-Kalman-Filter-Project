@@ -15,7 +15,9 @@ class UKF {
    */
   void ProcessMeasurement(MeasurementPackage meas_package);
 
+  bool has_state() const { return (bool)ukf_; }
   Eigen::VectorXd state() const { return ukf_->state().mean; }
+  double nis() const { return ukf_->nis(); }
 
  private:
   std::unique_ptr<Model::CTRVUnscentedKalmanFilter> ukf_;

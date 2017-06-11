@@ -1,6 +1,7 @@
 #include "model.h"
 
 #include <gtest/gtest.h>
+#include <cmath>
 #include "Eigen/Dense"
 
 using Eigen::MatrixXd;
@@ -299,12 +300,45 @@ TEST(TestUpdateState, RadarUpdate) {
      -0.00071719,   0.00358884, 0.00171811,   0.00669426,  0.00881797;
   // clang-format on
 
-  Model::Gaussian result = Model::Details::KalmanUpdate(
-      Model::Gaussian{x, P}, Xsig_pred, Model::Gaussian{z_pred, S}, Zsig, z);
+  using Model::Gaussian;
+  using Model::Details::KalmanUpdate;
+
+  Gaussian result =
+      KalmanUpdate(Gaussian{x, P}, Xsig_pred, Gaussian{z_pred, S}, Zsig, z)
+          .state;
   EXPECT_TRUE(MatricesAlmostEqual(result.mean, expected_mean)) << "mean=\n"
                                                                << result.mean;
   EXPECT_TRUE(MatricesAlmostEqual(result.cov, expected_cov)) << "cov=\n"
                                                              << result.cov;
+}
+
+namespace {
+double NormalizeAngleBaseline(double angle) {
+  while (angle < -M_PI) {
+    angle += 2 * M_PI;
+  }
+  while (angle > M_PI) {
+    angle -= 2 * M_PI;
+  }
+
+  return angle;
+}
+}
+
+TEST(TestNormalizeAngle, ItWorks) {
+  using Model::Details::NormalizeAngle;
+
+  EXPECT_DOUBLE_EQ(NormalizeAngle(M_PI), M_PI);
+  EXPECT_DOUBLE_EQ(NormalizeAngle(-M_PI), -M_PI);
+  EXPECT_DOUBLE_EQ(NormalizeAngle(-M_PI / 2), -M_PI / 2);
+  EXPECT_DOUBLE_EQ(NormalizeAngle(M_PI / 2), M_PI / 2);
+
+  for (double v : std::vector<double>{0.1 * M_PI, 3 * M_PI, 3.7 * M_PI,
+                                      5.1 * M_PI, 5.9 * M_PI}) {
+    SCOPED_TRACE(v);
+    EXPECT_DOUBLE_EQ(NormalizeAngle(+v), NormalizeAngleBaseline(+v));
+    EXPECT_DOUBLE_EQ(NormalizeAngle(-v), NormalizeAngleBaseline(-v));
+  }
 }
 
 }  // namespace

@@ -5,9 +5,10 @@
 
 namespace {
 // Process noise standard deviation longitudinal acceleration in m/s^2
-const double kStdA = 30;
+const double kStdA = 1;
 // Process noise standard deviation yaw acceleration in rad/s^2
-const double kStdYawdd = 30;
+// 0.392 should be more reasonable, but produces worse results
+const double kStdYawdd = 0.5;
 // To scale timestamp to second
 const double kMicrosecondsInSecond = 1000000.0;
 }  // namespace
@@ -18,14 +19,6 @@ UKF::UKF() : laser_cov_(2, 2), radar_cov_(3, 3), prev_timestamp_(0) {
 
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
-
-  /**
-  TODO:
-
-  Complete the initialization. See ukf.h for other member properties.
-
-  Hint: one or more values initialized above might be wildly off...
-  */
 
   laser_cov_.fill(0);
   // Laser measurement noise standard deviation position1 in m
@@ -45,26 +38,21 @@ UKF::UKF() : laser_cov_(2, 2), radar_cov_(3, 3), prev_timestamp_(0) {
 void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   // TODO(dukexar): Can we live without switch here? Too ugly to have a template
   // and a switch together...
+  std::cout << ">>> ProcessMeasurement" << std::endl;
   if (!ukf_) {
     switch (meas_package.sensor_type_) {
       case MeasurementPackage::SensorType::LASER: {
-        if (use_laser_) {
-          Model::Gaussian initialState{
-              Model::Laser::CreateFirstMean(meas_package.raw_measurements_),
-              Eigen::MatrixXd::Identity(Model::kStateSize, Model::kStateSize)};
-          ukf_.reset(new Model::CTRVUnscentedKalmanFilter(kStdA, kStdYawdd,
-                                                          initialState));
-        }
+        Model::Gaussian initialState = Model::Laser::CreateInitialGaussian(
+            meas_package.raw_measurements_, laser_cov_);
+        ukf_.reset(new Model::CTRVUnscentedKalmanFilter(kStdA, kStdYawdd,
+                                                        initialState));
         break;
       }
       case MeasurementPackage::SensorType::RADAR: {
-        if (use_radar_) {
-          Model::Gaussian initialState{
-              Model::Radar::CreateFirstMean(meas_package.raw_measurements_),
-              Eigen::MatrixXd::Identity(Model::kStateSize, Model::kStateSize)};
-          ukf_.reset(new Model::CTRVUnscentedKalmanFilter(kStdA, kStdYawdd,
-                                                          initialState));
-        }
+        Model::Gaussian initialState = Model::Radar::CreateInitialGaussian(
+            meas_package.raw_measurements_, radar_cov_);
+        ukf_.reset(new Model::CTRVUnscentedKalmanFilter(kStdA, kStdYawdd,
+                                                        initialState));
         break;
       }
       default:
@@ -77,14 +65,13 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
   double dt =
       (meas_package.timestamp_ - prev_timestamp_) / kMicrosecondsInSecond;
-  std::cout << ">>> Predicting dt=" << dt << std::endl;
-  std::cout << "state=\n"
+  std::cout << "    Predicting dt=" << dt << std::endl;
+  std::cout << "    state before=\n"
             << ukf_->state().mean << "\n---\n"
             << ukf_->state().cov << "\n---" << std::endl;
   ukf_->Predict(dt);
 
-  std::cout << ">>> Predicted" << std::endl;
-  std::cout << "state=\n"
+  std::cout << "    state predicted=\n"
             << ukf_->state().mean << "\n---\n"
             << ukf_->state().cov << "\n---" << std::endl;
 
@@ -107,4 +94,5 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   }
 
   prev_timestamp_ = meas_package.timestamp_;
+  std::cout << "Finished updating " << meas_package.sensor_type_ << std::endl;
 }
