@@ -42,7 +42,7 @@ UKF::UKF() : laser_cov_(2, 2), radar_cov_(3, 3), prev_timestamp_(0) {
 void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   // TODO(dukexar): Can we live without switch here? Too ugly to have a template
   // and a switch together...
-  std::cout << ">>> ProcessMeasurement" << std::endl;
+
   if (!ukf_) {
     switch (meas_package.sensor_type_) {
       case MeasurementPackage::SensorType::LASER: {
@@ -69,17 +69,9 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
   double dt =
       (meas_package.timestamp_ - prev_timestamp_) / kMicrosecondsInSecond;
-  std::cout << "    Predicting dt=" << dt << std::endl;
-  std::cout << "    state before=\n"
-            << ukf_->state().mean << "\n---\n"
-            << ukf_->state().cov << "\n---" << std::endl;
+
   ukf_->Predict(dt);
 
-  std::cout << "    state predicted=\n"
-            << ukf_->state().mean << "\n---\n"
-            << ukf_->state().cov << "\n---" << std::endl;
-
-  std::cout << ">>> Updating " << meas_package.sensor_type_ << std::endl;
   switch (meas_package.sensor_type_) {
     case MeasurementPackage::SensorType::LASER: {
       if (use_laser_) {
@@ -98,5 +90,4 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   }
 
   prev_timestamp_ = meas_package.timestamp_;
-  std::cout << "Finished updating " << meas_package.sensor_type_ << std::endl;
 }

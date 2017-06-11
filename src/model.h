@@ -117,8 +117,6 @@ inline void CTRVUnscentedKalmanFilter::Update(
                           pred_measurement_sigma_pts, measurement);
   state_ = res.state;
   nis_ = res.nis;
-  std::cout << "After Update" << std::endl;
-  std::cout << state_.mean << std::endl;
 }
 
 }  // namespace Model

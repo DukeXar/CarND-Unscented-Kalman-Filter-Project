@@ -93,15 +93,11 @@ Eigen::VectorXd CTRVPredictVector(const Eigen::VectorXd& aug_sigma_pts,
 
 Eigen::MatrixXd CTRVPredictSigmaPoints(const Eigen::MatrixXd& aug_sigma_pts,
                                        double dt) {
-  std::cout << "        CTRVPredictSigmaPoints input(\n"
-            << aug_sigma_pts.transpose() << "), dt=" << dt << std::endl;
   Eigen::MatrixXd result(kStateSize, aug_sigma_pts.cols());
 
   for (size_t i = 0; i < aug_sigma_pts.cols(); ++i) {
     result.col(i) = CTRVPredictVector(aug_sigma_pts.col(i), dt);
   }
-  std::cout << "        CTRVPredictSigmaPoints result(\n"
-            << result.transpose() << ")" << std::endl;
 
   return result;
 }

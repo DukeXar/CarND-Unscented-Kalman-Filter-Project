@@ -59,8 +59,8 @@ int main() {
         if (event == "telemetry") {
           // j[1] is the data JSON object
 
-          std::cout << "Got message length=" << length << ", ["
-                    << std::string(data, length) << "]" << std::endl;
+          // std::cout << "Got message length=" << length << ", ["
+          //          << std::string(data, length) << "]" << std::endl;
           string sensor_measurment = j[1]["sensor_measurement"];
 
           MeasurementPackage meas_package;
@@ -114,7 +114,8 @@ int main() {
           VectorXd x;
           if (ukf.has_state()) {
             x = ukf.state();
-            std::cout << "NIS," << timestamp << "," << ukf.nis() << std::endl;
+            // std::cout << "NIS," << timestamp << "," << ukf.nis() <<
+            // std::endl;
           } else {
             x = VectorXd(4);
             x.fill(0);
@@ -146,7 +147,7 @@ int main() {
           msgJson["rmse_vx"] = RMSE(2);
           msgJson["rmse_vy"] = RMSE(3);
           auto msg = "42[\"estimate_marker\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          // std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
