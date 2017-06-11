@@ -4,12 +4,16 @@
 #include <stdexcept>
 
 namespace {
+// The values look good from the NIS validation perspective.
+// Tried to lower them, but after going lower than 2, the lower left quadrant
+// in the dataset 1 is not processed correctly (noisy radar measurement make
+// whole filter go wild for a while).
 // Process noise standard deviation longitudinal acceleration in m/s^2
-const double kStdA = 1;
+const double kStdA = 2;
 // Process noise standard deviation yaw acceleration in rad/s^2
-// 0.392 should be more reasonable, but produces worse results
-const double kStdYawdd = 0.5;
-// To scale timestamp to second
+const double kStdYawdd = 2;
+
+// To scale timestamp to seconds
 const double kMicrosecondsInSecond = 1000000.0;
 }  // namespace
 

@@ -114,6 +114,7 @@ int main() {
           VectorXd x;
           if (ukf.has_state()) {
             x = ukf.state();
+            std::cout << "NIS," << timestamp << "," << ukf.nis() << std::endl;
           } else {
             x = VectorXd(4);
             x.fill(0);

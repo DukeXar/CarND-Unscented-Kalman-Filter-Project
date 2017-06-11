@@ -9,10 +9,6 @@ class UKF {
  public:
   UKF();
 
-  /**
-   * ProcessMeasurement
-   * @param meas_package The latest measurement data of either radar or laser
-   */
   void ProcessMeasurement(MeasurementPackage meas_package);
 
   bool has_state() const { return (bool)ukf_; }
