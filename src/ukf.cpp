@@ -1,6 +1,5 @@
 #include "ukf.h"
 
-#include <iostream>
 #include <stdexcept>
 
 namespace {

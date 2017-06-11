@@ -1,7 +1,6 @@
 #include "model.h"
 
 #include <cmath>
-#include <iostream>
 #include <stdexcept>
 
 namespace Model {
